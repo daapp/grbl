@@ -347,7 +347,7 @@ uint8_t gc_execute_line(char *line)
 	// Update axes defined only in block. Offsets current system to defined value. Does not update when
 	// active coordinate system is selected, but is still active unless G92.1 disables it.
 	uint8_t i;
-	for (i=0; i<=N_AXIS; i++) { // Axes indices are consistent, so loop may be used.
+	for (i=0; i<N_AXIS; i++) { // Axes indices are consistent, so loop may be used.
 	  if (bit_istrue(axis_words,bit(i)) ) {
 	    gc.coord_offset[i] = gc.position[i]-gc.coord_system[i]-target[i];
 	  }
@@ -382,7 +382,7 @@ uint8_t gc_execute_line(char *line)
     // absolute mode coordinate offsets or incremental mode offsets.
     // NOTE: Tool offsets may be appended to these conversions when/if this feature is added.
     uint8_t i;
-    for (i=0; i<=N_AXIS; i++) { // Axes indices are consistent, so loop may be used to save flash space.
+    for (i=0; i<N_AXIS; i++) { // Axes indices are consistent, so loop may be used to save flash space.
       if ( bit_istrue(axis_words,bit(i)) ) {
 	if (!absolute_override) { // Do not update target in absolute override mode
 	  if (gc.absolute_mode) {
