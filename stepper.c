@@ -150,7 +150,11 @@ ISR(TIMER1_COMPA_vect)
   if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
 
   // Set the direction pins a couple of nanoseconds before we step the steppers
+#ifdef DIRECTION_DDR
+  DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | (out_bits & DIRECTION_MASK);
+#else
   STEPPING_PORT = (STEPPING_PORT & ~DIRECTION_MASK) | (out_bits & DIRECTION_MASK);
+#endif
   // Then pulse the stepping pins
   #ifdef STEP_PULSE_DELAY
     step_bits = (STEPPING_PORT & ~STEP_MASK) | out_bits; // Store out_bits to prevent overwriting.
@@ -356,7 +360,14 @@ void st_init()
 {
   // Configure directions of interface pins
   STEPPING_DDR |= STEPPING_MASK;
+
+#ifdef DIRECTION_DDR
+  DIRECTION_DDR |= DIRECTION_MASK;
+  DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | settings.invert_mask;
+  STEPPING_PORT = (STEPPING_PORT & ~STEPPING_MASK);
+#else
   STEPPING_PORT = (STEPPING_PORT & ~STEPPING_MASK) | settings.invert_mask;
+#endif
   STEPPERS_DISABLE_DDR |= 1<<STEPPERS_DISABLE_BIT;
 
   // waveform generation = 0100 = CTC

@@ -34,13 +34,19 @@
 #define Y_STEP_BIT         1  // Uno Digital Pin 3
 #define Z_STEP_BIT         2  // Uno Digital Pin 4
 #define A_STEP_BIT         3
-#define X_DIRECTION_BIT    4  // Uno Digital Pin 5
-#define Y_DIRECTION_BIT    5  // Uno Digital Pin 6
-#define Z_DIRECTION_BIT    6  // Uno Digital Pin 7
-#define A_DIRECTION_BIT    7
+#define DIRECTION_DDR      DDRD
+#define DIRECTION_PORT     PORTD
+#define X_DIRECTION_BIT    2  // Uno Digital Pin 5
+#define Y_DIRECTION_BIT    3  // Uno Digital Pin 6
+#define Z_DIRECTION_BIT    4  // Uno Digital Pin 7
+#define A_DIRECTION_BIT    5
 #define STEP_MASK ((1<<X_STEP_BIT)|(1<<Y_STEP_BIT)|(1<<Z_STEP_BIT)|(1<<A_STEP_BIT)) // All step bits
 #define DIRECTION_MASK ((1<<X_DIRECTION_BIT)|(1<<Y_DIRECTION_BIT)|(1<<Z_DIRECTION_BIT)|(1<<A_DIRECTION_BIT)) // All direction bits
+#ifdef DIRECTION_DDR
+#define STEPPING_MASK STEP_MASK
+#else
 #define STEPPING_MASK (STEP_MASK | DIRECTION_MASK) // All stepping-related bits (step/direction)
+#endif
 
 #define STEPPERS_DISABLE_DDR    DDRB
 #define STEPPERS_DISABLE_PORT   PORTB
@@ -58,7 +64,7 @@
 #define LIMIT_INT       PCIE0  // Pin change interrupt enable pin
 #define LIMIT_INT_vect  PCINT0_vect
 #define LIMIT_PCMSK     PCMSK0 // Pin change interrupt register
-#define LIMIT_MASK ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)) // All limit bits
+#define LIMIT_MASK ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<A_LIMIT_BIT)) // All limit bits
 
 #define SPINDLE_ENABLE_DDR   DDRC
 #define SPINDLE_ENABLE_PORT  PORTC
@@ -107,7 +113,7 @@
 #define DEFAULT_FEEDRATE 250.0
 #define DEFAULT_ACCELERATION (DEFAULT_FEEDRATE*60*60/10.0) // mm/min^2
 #define DEFAULT_JUNCTION_DEVIATION 0.05 // mm
-#define DEFAULT_STEPPING_INVERT_MASK ((1<<Y_DIRECTION_BIT)|(1<<Z_DIRECTION_BIT))
+#define DEFAULT_STEPPING_INVERT_MASK ((1<<Y_DIRECTION_BIT)|(1<<Z_DIRECTION_BIT)|(1<<A_DIRECTION_BIT))
 #define DEFAULT_REPORT_INCHES 0 // false
 #define DEFAULT_AUTO_START 1 // true
 #define DEFAULT_INVERT_ST_ENABLE 0 // false
