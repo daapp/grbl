@@ -71,7 +71,9 @@ void settings_reset(bool reset_all) {
     settings.steps_per_mm[X_AXIS] = DEFAULT_X_STEPS_PER_MM;
     settings.steps_per_mm[Y_AXIS] = DEFAULT_Y_STEPS_PER_MM;
     settings.steps_per_mm[Z_AXIS] = DEFAULT_Z_STEPS_PER_MM;
-    settings.steps_per_mm[A_AXIS] = DEFAULT_A_STEPS_PER_MM;
+    settings.steps_per_mm[A_AXIS] = DEFAULT_A_STEPS_PER_DEG;
+    settings.steps_per_mm[B_AXIS] = DEFAULT_B_STEPS_PER_DEG;
+    settings.steps_per_mm[C_AXIS] = DEFAULT_C_STEPS_PER_DEG;
     settings.pulse_microseconds = DEFAULT_STEP_PULSE_MICROSECONDS;
     settings.default_feed_rate = DEFAULT_FEEDRATE;
     settings.default_seek_rate = DEFAULT_RAPID_FEEDRATE;

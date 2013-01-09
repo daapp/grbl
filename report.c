@@ -164,7 +164,9 @@ void report_grbl_settings() {
   printPgmString(PSTR(" (homing seek, mm/min)\r\n$21=")); printInteger(settings.homing_debounce_delay);
   printPgmString(PSTR(" (homing debounce, msec)\r\n$22=")); printFloat(settings.homing_pulloff);
   printPgmString(PSTR(" (homing pull-off, mm)\r\n$30=")); printFloat(settings.steps_per_mm[A_AXIS]);
-  printPgmString(PSTR(" (a, step/mm)\r\n"));
+  printPgmString(PSTR(" (a, deg/mm)\r\n$31=")); printFloat(settings.steps_per_mm[B_AXIS]);
+  printPgmString(PSTR(" (b, deg/mm)\r\n$32=")); printFloat(settings.steps_per_mm[C_AXIS]);
+  printPgmString(PSTR(" (c, deg/mm)\r\n"));
 }
 
 

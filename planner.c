@@ -34,11 +34,11 @@
 static block_t block_buffer[BLOCK_BUFFER_SIZE];  // A ring buffer for motion instructions
 static volatile uint8_t block_buffer_head;       // Index of the next block to be pushed
 static volatile uint8_t block_buffer_tail;       // Index of the block to process now
-static uint8_t next_buffer_head;                 // Index of the next buffer head
+static uint8_t next_buffer_head;		 // Index of the next buffer head
 
 // Define planner variables
 typedef struct {
-  int32_t position[N_AXIS];        // The planner position of the tool in absolute steps. Kept separate
+  int32_t position[N_AXIS];	// The planner position of the tool in absolute steps. Kept separate
 				   // from g-code position for movements requiring multiple line motions,
 				   // i.e. arcs, canned cycles, and backlash compensation.
   float previous_unit_vec[N_AXIS]; // Unit vector of previous path line segment
@@ -342,7 +342,7 @@ void plan_synchronize()
 // All position data passed to the planner must be in terms of machine position to keep the planner
 // independent of any coordinate system changes and offsets, which are handled by the g-code parser.
 // NOTE: Assumes buffer is available. Buffer checks are handled at a higher level by motion_control.
-void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8_t invert_feed_rate)
+void plan_buffer_line(float x, float y, float z, float a, float b, float c, float feed_rate, uint8_t invert_feed_rate)
 {
   // Prepare to set up new block
   block_t *block = &block_buffer[block_buffer_head];
@@ -353,6 +353,8 @@ void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8
   target[Y_AXIS] = lround(y*settings.steps_per_mm[Y_AXIS]);
   target[Z_AXIS] = lround(z*settings.steps_per_mm[Z_AXIS]);
   target[A_AXIS] = lround(a*settings.steps_per_mm[A_AXIS]);
+  target[B_AXIS] = lround(b*settings.steps_per_mm[B_AXIS]);
+  target[C_AXIS] = lround(c*settings.steps_per_mm[C_AXIS]);
 
   // Compute direction bits for this block
   block->direction_bits = 0;
@@ -360,13 +362,17 @@ void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8
   if (target[Y_AXIS] < pl.position[Y_AXIS]) { block->direction_bits |= (1<<Y_DIRECTION_BIT); }
   if (target[Z_AXIS] < pl.position[Z_AXIS]) { block->direction_bits |= (1<<Z_DIRECTION_BIT); }
   if (target[A_AXIS] < pl.position[A_AXIS]) { block->direction_bits |= (1<<A_DIRECTION_BIT); }
+  if (target[B_AXIS] < pl.position[B_AXIS]) { block->direction_bits |= (1<<B_DIRECTION_BIT); }
+  if (target[C_AXIS] < pl.position[C_AXIS]) { block->direction_bits |= (1<<C_DIRECTION_BIT); }
 
   // Number of steps for each axis
   block->steps_x = labs(target[X_AXIS]-pl.position[X_AXIS]);
   block->steps_y = labs(target[Y_AXIS]-pl.position[Y_AXIS]);
   block->steps_z = labs(target[Z_AXIS]-pl.position[Z_AXIS]);
   block->steps_a = labs(target[A_AXIS]-pl.position[A_AXIS]);
-  block->step_event_count = max(block->steps_x, max(block->steps_y, max(block->steps_z, block->steps_a)));
+  block->steps_b = labs(target[B_AXIS]-pl.position[B_AXIS]);
+  block->steps_c = labs(target[C_AXIS]-pl.position[C_AXIS]);
+  block->step_event_count = max(block->steps_x, max(block->steps_y, max(block->steps_z, max(block->steps_a, max(block->steps_b, block->steps_c)))));
 
   // Bail if this is a zero-length block
   if (block->step_event_count == 0) { return; };
@@ -377,8 +383,10 @@ void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8
   delta_mm[Y_AXIS] = (target[Y_AXIS]-pl.position[Y_AXIS])/settings.steps_per_mm[Y_AXIS];
   delta_mm[Z_AXIS] = (target[Z_AXIS]-pl.position[Z_AXIS])/settings.steps_per_mm[Z_AXIS];
   delta_mm[A_AXIS] = (target[A_AXIS]-pl.position[A_AXIS])/settings.steps_per_mm[A_AXIS];
-  block->millimeters = sqrt(delta_mm[X_AXIS]*delta_mm[X_AXIS] + delta_mm[Y_AXIS]*delta_mm[Y_AXIS] +
-			    delta_mm[Z_AXIS]*delta_mm[Z_AXIS] + delta_mm[A_AXIS]*delta_mm[A_AXIS]);
+  delta_mm[B_AXIS] = (target[B_AXIS]-pl.position[B_AXIS])/settings.steps_per_mm[B_AXIS];
+  delta_mm[C_AXIS] = (target[C_AXIS]-pl.position[C_AXIS])/settings.steps_per_mm[C_AXIS];
+  block->millimeters = sqrt(delta_mm[X_AXIS]*delta_mm[X_AXIS] + delta_mm[Y_AXIS]*delta_mm[Y_AXIS] + delta_mm[Z_AXIS]*delta_mm[Z_AXIS] +
+			    delta_mm[A_AXIS]*delta_mm[A_AXIS] + delta_mm[B_AXIS]*delta_mm[B_AXIS] + delta_mm[C_AXIS]*delta_mm[C_AXIS]);
   float inverse_millimeters = 1.0/block->millimeters;  // Inverse millimeters to remove multiple divides
 
   // Calculate speed in mm/minute for each axis. No divide by zero due to previous checks.
@@ -409,6 +417,8 @@ void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8
   unit_vec[Y_AXIS] = delta_mm[Y_AXIS]*inverse_millimeters;
   unit_vec[Z_AXIS] = delta_mm[Z_AXIS]*inverse_millimeters;
   unit_vec[A_AXIS] = delta_mm[A_AXIS]*inverse_millimeters;
+  unit_vec[B_AXIS] = delta_mm[B_AXIS]*inverse_millimeters;
+  unit_vec[C_AXIS] = delta_mm[C_AXIS]*inverse_millimeters;
 
   // Compute maximum allowable entry speed at junction by centripetal acceleration approximation.
   // Let a circle be tangent to both previous and current path line segments, where the junction
@@ -434,7 +444,9 @@ void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8
     float cos_theta = - pl.previous_unit_vec[X_AXIS] * unit_vec[X_AXIS]
 		       - pl.previous_unit_vec[Y_AXIS] * unit_vec[Y_AXIS]
 		       - pl.previous_unit_vec[Z_AXIS] * unit_vec[Z_AXIS]
-		       - pl.previous_unit_vec[A_AXIS] * unit_vec[A_AXIS] ;
+		       - pl.previous_unit_vec[A_AXIS] * unit_vec[A_AXIS]
+		       - pl.previous_unit_vec[B_AXIS] * unit_vec[B_AXIS]
+		       - pl.previous_unit_vec[C_AXIS] * unit_vec[C_AXIS] ;
 
     // Skip and use default max junction speed for 0 degree acute junction.
     if (cos_theta < 0.95) {
@@ -481,12 +493,14 @@ void plan_buffer_line(float x, float y, float z, float a, float feed_rate, uint8
 }
 
 // Reset the planner position vector (in steps). Called by the system abort routine.
-void plan_set_current_position(int32_t x, int32_t y, int32_t z, int32_t a)
+void plan_set_current_position(int32_t x, int32_t y, int32_t z, int32_t a, int32_t b, int32_t c)
 {
   pl.position[X_AXIS] = x;
   pl.position[Y_AXIS] = y;
   pl.position[Z_AXIS] = z;
   pl.position[A_AXIS] = a;
+  pl.position[B_AXIS] = b;
+  pl.position[C_AXIS] = c;
 }
 
 // Re-initialize buffer plan with a partially completed block, assumed to exist at the buffer tail.

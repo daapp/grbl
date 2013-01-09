@@ -77,8 +77,8 @@ ISR(LIMIT_INT_vect)
 // algorithm is written here. This also lets users hack and tune this code freely for
 // their own particular needs without affecting the rest of Grbl.
 // NOTE: Only the abort runtime command can interrupt this process.
-static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool a_axis, int8_t pos_dir,
-			 bool invert_pin, float homing_rate)
+static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool a_axis, bool b_axis, bool c_axis,
+                         int8_t pos_dir, bool invert_pin, float homing_rate)
 {
   // Determine governing axes with finest step resolution per distance for the Bresenham
   // algorithm. This solves the issue when homing multiple axes that have different
@@ -93,14 +93,16 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool a_axis, int
   if (y_axis) { steps[Y_AXIS] = lround(settings.steps_per_mm[Y_AXIS]); }
   if (z_axis) { steps[Z_AXIS] = lround(settings.steps_per_mm[Z_AXIS]); }
   if (a_axis) { steps[A_AXIS] = lround(settings.steps_per_mm[A_AXIS]); }
-  uint32_t step_event_count = max(steps[X_AXIS], max(steps[Y_AXIS], max(steps[Z_AXIS], steps[A_AXIS])));
+  if (b_axis) { steps[B_AXIS] = lround(settings.steps_per_mm[B_AXIS]); }
+  if (c_axis) { steps[C_AXIS] = lround(settings.steps_per_mm[C_AXIS]); }
+  uint32_t step_event_count = max(steps[X_AXIS], max(steps[Y_AXIS], max(steps[Z_AXIS], max(steps[A_AXIS], max(steps[B_AXIS], steps[C_AXIS])))));
 
   // To ensure global acceleration is not exceeded, reduce the governing axes nominal rate
   // by adjusting the actual axes distance traveled per step. This is the same procedure
   // used in the main planner to account for distance traveled when moving multiple axes.
   // NOTE: When axis acceleration independence is installed, this will be updated to move
   // all axes at their maximum acceleration and rate.
-  float ds = step_event_count/sqrt(x_axis+y_axis+z_axis+a_axis);
+  float ds = step_event_count/sqrt(x_axis+y_axis+z_axis+a_axis+b_axis+c_axis);
 
   // Compute the adjusted step rate change with each acceleration tick. (in step/min/acceleration_tick)
   uint32_t delta_rate = ceil( ds*settings.acceleration/(60*ACCELERATION_TICKS_PER_SECOND));
@@ -123,6 +125,8 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool a_axis, int
   int32_t counter_y = counter_x;
   int32_t counter_z = counter_x;
   int32_t counter_a = counter_x;
+  int32_t counter_b = counter_x;
+  int32_t counter_c = counter_x;
   uint32_t step_delay = dt-settings.pulse_microseconds;  // Step delay after pulse
   uint32_t step_rate = 0;  // Tracks step rate. Initialized from 0 rate. (in step/min)
   uint32_t trap_counter = MICROSECONDS_PER_ACCELERATION_TICK/2; // Acceleration trapezoid counter
@@ -172,9 +176,27 @@ static void homing_cycle(bool x_axis, bool y_axis, bool z_axis, bool a_axis, int
       }
     }
 
+    if (b_axis) {
+      counter_b += steps[B_AXIS];
+      if (counter_b > 0) {
+	if (limit_state & (1<<B_LIMIT_BIT)) { out_bits ^= (1<<B_STEP_BIT); }
+	else { b_axis = false; }
+	counter_b -= step_event_count;
+      }
+    }
+
+    if (c_axis) {
+      counter_c += steps[C_AXIS];
+      if (counter_c > 0) {
+	if (limit_state & (1<<C_LIMIT_BIT)) { out_bits ^= (1<<C_STEP_BIT); }
+	else { c_axis = false; }
+	counter_c -= step_event_count;
+      }
+    }
+
     // Check if we are done or for system abort
     protocol_execute_runtime();
-    if (!(x_axis || y_axis || z_axis) || a_axis || sys.abort) { return; }
+    if (!(x_axis || y_axis || z_axis) || a_axis || b_axis || c_axis || sys.abort) { return; }
 
     // Perform step.
     STEPPING_PORT = (STEPPING_PORT & ~STEP_MASK) | (out_bits & STEP_MASK);
@@ -205,8 +227,8 @@ void limits_go_home()
   st_wake_up();
 
   // Jog all axes toward home to engage their limit switches at faster homing seek rate.
-  homing_cycle(false, false, true, true, true, false, settings.homing_seek_rate);  // First jog the z and a axes
-  homing_cycle(true, true, false, false, true, false, settings.homing_seek_rate);  // Then jog the x and y axis
+  homing_cycle(false, false, true,  true, true, true,  true, false, settings.homing_seek_rate);  // First jog the z and a axes
+  homing_cycle(true, true, false,  false, false, false,  true, false, settings.homing_seek_rate);  // Then jog the x and y axis
   delay_ms(settings.homing_debounce_delay); // Delay to debounce signal
 
   // Now in proximity of all limits. Carefully leave and approach switches in multiple cycles
@@ -214,12 +236,12 @@ void limits_go_home()
   int8_t n_cycle = N_HOMING_CYCLE;
   while (n_cycle--) {
     // Leave all switches to release them. After cycles complete, this is machine zero.
-    homing_cycle(true, true, true, true, false, true, settings.homing_feed_rate);
+    homing_cycle(true, true, true,  true, true, true,  false, true, settings.homing_feed_rate);
     delay_ms(settings.homing_debounce_delay);
 
     if (n_cycle > 0) {
       // Re-approach all switches to re-engage them.
-      homing_cycle(true, true, true, true, true, false, settings.homing_feed_rate);
+      homing_cycle(true, true, true,  true, true, true,  true, false, settings.homing_feed_rate);
       delay_ms(settings.homing_debounce_delay);
     }
   }

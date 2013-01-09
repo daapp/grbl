@@ -22,6 +22,7 @@
 /* The timer calculations of this module informed by the 'RepRap cartesian firmware' by Zack Smith
    and Philipp Tiefenbacher. */
 
+#include <avr/pgmspace.h>
 #include <avr/interrupt.h>
 #include "stepper.h"
 #include "config.h"
@@ -38,7 +39,9 @@ typedef struct {
   int32_t counter_x,        // Counter variables for the bresenham line tracer
 	  counter_y,
 	  counter_z,
-	  counter_a;
+	  counter_a,
+	  counter_b,
+	  counter_c;
   uint32_t event_count;
   uint32_t step_events_completed;  // The number of step events left in current motion
 
@@ -55,7 +58,11 @@ static block_t *current_block;  // A pointer to the block currently being traced
 
 // Used by the stepper driver interrupt
 static uint8_t step_pulse_time; // Step pulse reset time after step rise
+#ifdef DIRECTION_DDR
+static uint8_t out_step_bits, out_dir_bits;
+#else
 static uint8_t out_bits;        // The next stepping-bits to be output
+#endif
 static volatile uint8_t busy;   // True when SIG_OUTPUT_COMPARE1A is being serviced. Used to avoid retriggering that handler.
 
 #if STEP_PULSE_DELAY > 0
@@ -93,7 +100,11 @@ void st_wake_up()
   }
   if (sys.state == STATE_CYCLE) {
     // Initialize stepper output bits
-    out_bits = (0) ^ (settings.invert_mask);
+    #ifdef DIRECTION_DDR
+    out_dir_bits = (0) ^ (settings.invert_mask);
+    #else
+    out_bits     = (0) ^ (settings.invert_mask);
+    #endif
     // Initialize step pulse timing from settings. Here to ensure updating after re-writing.
     #ifdef STEP_PULSE_DELAY
       // Set total step pulse time after direction pin set. Ad hoc computation from oscilloscope.
@@ -151,15 +162,23 @@ ISR(TIMER1_COMPA_vect)
 
   // Set the direction pins a couple of nanoseconds before we step the steppers
 #ifdef DIRECTION_DDR
-  DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | (out_bits & DIRECTION_MASK);
+  DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | (out_dir_bits & DIRECTION_MASK);
 #else
-  STEPPING_PORT = (STEPPING_PORT & ~DIRECTION_MASK) | (out_bits & DIRECTION_MASK);
+  STEPPING_PORT  = (STEPPING_PORT & ~DIRECTION_MASK)  | (out_bits & DIRECTION_MASK);
 #endif
   // Then pulse the stepping pins
   #ifdef STEP_PULSE_DELAY
+    #ifdef DIRECTION_DDR
+    step_bits = (STEPPING_PORT & ~STEP_MASK) | out_step_bits;
+    #else
     step_bits = (STEPPING_PORT & ~STEP_MASK) | out_bits; // Store out_bits to prevent overwriting.
+    #endif
   #else  // Normal operation
+    #ifdef DIRECTION_DDR
+    STEPPING_PORT = (STEPPING_PORT & ~STEP_MASK) | out_step_bits;
+    #else
     STEPPING_PORT = (STEPPING_PORT & ~STEP_MASK) | out_bits;
+    #endif
   #endif
   // Enable step pulse reset timer so that The Stepper Port Reset Interrupt can reset the signal after
   // exactly settings.pulse_microseconds microseconds, independent of the main Timer1 prescaler.
@@ -188,6 +207,8 @@ ISR(TIMER1_COMPA_vect)
       st.counter_y = st.counter_x;
       st.counter_z = st.counter_x;
       st.counter_a = st.counter_x;
+      st.counter_b = st.counter_x;
+      st.counter_c = st.counter_x;
       st.event_count = current_block->step_event_count;
       st.step_events_completed = 0;
     } else {
@@ -198,7 +219,55 @@ ISR(TIMER1_COMPA_vect)
 
   if (current_block != NULL) {
     // Execute step displacement profile by bresenham line algorithm
-    out_bits = current_block->direction_bits;
+    #ifdef DIRECTION_DDR
+    out_dir_bits = current_block->direction_bits;
+    out_step_bits = 0;
+
+    st.counter_x += current_block->steps_x;
+    if (st.counter_x > 0) {
+      out_step_bits |= (1<<X_STEP_BIT);
+      st.counter_x -= st.event_count;
+      if (out_dir_bits & (1<<X_DIRECTION_BIT)) { sys.position[X_AXIS]--; }
+      else { sys.position[X_AXIS]++; }
+    }
+    st.counter_y += current_block->steps_y;
+    if (st.counter_y > 0) {
+      out_step_bits |= (1<<Y_STEP_BIT);
+      st.counter_y -= st.event_count;
+      if (out_dir_bits & (1<<Y_DIRECTION_BIT)) { sys.position[Y_AXIS]--; }
+      else { sys.position[Y_AXIS]++; }
+    }
+    st.counter_z += current_block->steps_z;
+    if (st.counter_z > 0) {
+      out_step_bits |= (1<<Z_STEP_BIT);
+      st.counter_z -= st.event_count;
+      if (out_dir_bits & (1<<Z_DIRECTION_BIT)) { sys.position[Z_AXIS]--; }
+      else { sys.position[Z_AXIS]++; }
+    }
+
+    st.counter_a += current_block->steps_a;
+    if (st.counter_a > 0) {
+      out_step_bits |= (1<<A_STEP_BIT);
+      st.counter_a -= st.event_count;
+      if (out_dir_bits & (1<<A_DIRECTION_BIT)) { sys.position[A_AXIS]--; }
+      else { sys.position[A_AXIS]++; }
+    }
+    st.counter_b += current_block->steps_b;
+    if (st.counter_b > 0) {
+      out_step_bits |= (1<<B_STEP_BIT);
+      st.counter_b -= st.event_count;
+      if (out_dir_bits & (1<<B_DIRECTION_BIT)) { sys.position[B_AXIS]--; }
+      else { sys.position[B_AXIS]++; }
+    }
+    st.counter_c += current_block->steps_c;
+    if (st.counter_c > 0) {
+      out_step_bits |= (1<<C_STEP_BIT);
+      st.counter_c -= st.event_count;
+      if (out_dir_bits & (1<<C_DIRECTION_BIT)) { sys.position[C_AXIS]--; }
+      else { sys.position[C_AXIS]++; }
+    }
+    #else
+    out_bits     = current_block->direction_bits;
     st.counter_x += current_block->steps_x;
     if (st.counter_x > 0) {
       out_bits |= (1<<X_STEP_BIT);
@@ -228,6 +297,21 @@ ISR(TIMER1_COMPA_vect)
       if (out_bits & (1<<A_DIRECTION_BIT)) { sys.position[A_AXIS]--; }
       else { sys.position[A_AXIS]++; }
     }
+    st.counter_b += current_block->steps_b;
+    if (st.counter_b > 0) {
+      out_bits |= (1<<B_STEP_BIT);
+      st.counter_b -= st.event_count;
+      if (out_bits & (1<<B_DIRECTION_BIT)) { sys.position[B_AXIS]--; }
+      else { sys.position[B_AXIS]++; }
+    }
+    st.counter_c += current_block->steps_c;
+    if (st.counter_c > 0) {
+      out_bits |= (1<<C_STEP_BIT);
+      st.counter_c -= st.event_count;
+      if (out_bits & (1<<C_DIRECTION_BIT)) { sys.position[C_AXIS]--; }
+      else { sys.position[C_AXIS]++; }
+    }
+    #endif
 
     st.step_events_completed++; // Iterate step events
 
@@ -317,7 +401,12 @@ ISR(TIMER1_COMPA_vect)
       plan_discard_current_block();
     }
   }
+  #ifdef DIRECTION_DDR
+  // todo: check what happens with steps
+  out_dir_bits  ^= settings.invert_mask;
+  #else
   out_bits ^= settings.invert_mask;  // Apply step and direction invert mask
+  #endif
   busy = false;
 }
 

@@ -47,7 +47,7 @@
 // However, this keeps the memory requirements lower since it doesn't have to call and hold two
 // plan_buffer_lines in memory. Grbl only has to retain the original line input variables during a
 // backlash segment(s).
-void mc_line(float x, float y, float z, float a, float feed_rate, uint8_t invert_feed_rate)
+void mc_line(float x, float y, float z, float a, float b, float c, float feed_rate, uint8_t invert_feed_rate)
 {
   // TODO: Backlash compensation may be installed here. Only need direction info to track when
   // to insert a backlash line motion(s) before the intended line motion. Requires its own
@@ -65,7 +65,7 @@ void mc_line(float x, float y, float z, float a, float feed_rate, uint8_t invert
 
   // If in check gcode mode, prevent motion by blocking planner.
   if (bit_isfalse(gc.switches,BITFLAG_CHECK_GCODE)) {
-    plan_buffer_line(x, y, z, a, feed_rate, invert_feed_rate);
+    plan_buffer_line(x, y, z, a, b, c, feed_rate, invert_feed_rate);
 
     // Indicate to the system there is now a planned block in the buffer ready to cycle start.
     // NOTE: If homing cycles are enabled, a position lost state will lock out all motions,
@@ -124,8 +124,8 @@ void mc_arc(float *position, float *target, float *offset, uint8_t axis_0, uint8
 
   /* Vector rotation by transformation matrix: r is the original vector, r_T is the rotated vector,
      and phi is the angle of rotation. Solution approach by Jens Geisler.
-	 r_T = [cos(phi) -sin(phi);
-		sin(phi)  cos(phi] * r ;
+         r_T = [cos(phi) -sin(phi);
+                sin(phi)  cos(phi] * r ;
 
      For arc generation, the center of the circle is the axis of rotation and the radius vector is
      defined from the circle center to the initial position. Each line segment is formed by successive
@@ -183,13 +183,13 @@ void mc_arc(float *position, float *target, float *offset, uint8_t axis_0, uint8
     arc_target[axis_0] = center_axis0 + r_axis0;
     arc_target[axis_1] = center_axis1 + r_axis1;
     arc_target[axis_linear] += linear_per_segment;
-    mc_line(arc_target[X_AXIS], arc_target[Y_AXIS], arc_target[Z_AXIS], arc_target[A_AXIS], feed_rate, invert_feed_rate);
+    mc_line(arc_target[X_AXIS], arc_target[Y_AXIS], arc_target[Z_AXIS], arc_target[A_AXIS], arc_target[B_AXIS], arc_target[C_AXIS], feed_rate, invert_feed_rate);
 
     // Bail mid-circle on system abort. Runtime command check already performed by mc_line.
     if (sys.abort) { return; }
   }
   // Ensure last segment arrives at target location.
-  mc_line(target[X_AXIS], target[Y_AXIS], target[Z_AXIS], target[A_AXIS], feed_rate, invert_feed_rate);
+  mc_line(target[X_AXIS], target[Y_AXIS], target[Z_AXIS], target[A_AXIS], target[B_AXIS], target[C_AXIS], feed_rate, invert_feed_rate);
 }
 
 
@@ -231,14 +231,16 @@ void mc_go_home()
   // Pull-off all axes from limit switches before continuing motion. This provides some initial
   // clearance off the switches and should also help prevent them from falsely tripping when
   // hard limits are enabled.
-  int8_t x_dir, y_dir, z_dir, a_dir;
-  x_dir = y_dir = z_dir = a_dir = -1;
+  int8_t x_dir, y_dir, z_dir, a_dir, b_dir, c_dir;
+  x_dir = y_dir = z_dir = a_dir = b_dir = c_dir = -1;
   if (bit_istrue(settings.homing_dir_mask,bit(X_DIRECTION_BIT))) { x_dir = 1; }
   if (bit_istrue(settings.homing_dir_mask,bit(Y_DIRECTION_BIT))) { y_dir = 1; }
   if (bit_istrue(settings.homing_dir_mask,bit(Z_DIRECTION_BIT))) { z_dir = 1; }
   if (bit_istrue(settings.homing_dir_mask,bit(A_DIRECTION_BIT))) { a_dir = 1; }
-  mc_line(x_dir*settings.homing_pulloff, y_dir*settings.homing_pulloff,
-	  z_dir*settings.homing_pulloff, a_dir*settings.homing_pulloff, settings.homing_feed_rate, false);
+  if (bit_istrue(settings.homing_dir_mask,bit(B_DIRECTION_BIT))) { b_dir = 1; }
+  if (bit_istrue(settings.homing_dir_mask,bit(C_DIRECTION_BIT))) { c_dir = 1; }
+  mc_line(x_dir*settings.homing_pulloff, y_dir*settings.homing_pulloff, z_dir*settings.homing_pulloff,
+          a_dir*settings.homing_pulloff, b_dir*settings.homing_pulloff, c_dir*settings.homing_pulloff, settings.homing_feed_rate, false);
   st_cycle_start(); // Move it. Nothing should be in the buffer except this motion.
   plan_synchronize(); // Make sure the motion completes.
 
